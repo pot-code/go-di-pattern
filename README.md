@@ -101,6 +101,20 @@ func InitPackage(dic *container.DIContainer) {
 }
 ```
 
+### 接口
+
+接口注入也是支持的：
+
+```go
+type ILowLevel interface {
+	Counter() int
+}
+
+type TopLevelComponent struct {
+	ILowLevel `dep:"LowLevelComponent"`
+}
+```
+
 ### 循环依赖
 
 DI 包含循环依赖的检测代码，根据错误提示操作

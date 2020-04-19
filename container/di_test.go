@@ -6,20 +6,28 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+type ILowLevel interface {
+	Counter() int
+}
+
 type LowLevelComponent struct {
-	Counter int
+	counter int
 }
 
 func (llc LowLevelComponent) Constructor() *LowLevelComponent {
 	return &LowLevelComponent{12}
 }
 
+func (llc *LowLevelComponent) Counter() int {
+	return llc.counter
+}
+
 type TopLevelComponent struct {
-	LowLevelComponent `dep:"LowLevelComponent"`
+	ILowLevel `dep:"LowLevelComponent"`
 }
 
 func (tlc TopLevelComponent) Constructor() *TopLevelComponent {
-	return &TopLevelComponent{tlc.LowLevelComponent}
+	return &TopLevelComponent{tlc.ILowLevel}
 }
 
 func TestGet(t *testing.T) {
@@ -29,5 +37,5 @@ func TestGet(t *testing.T) {
 	dic.Register(new(TopLevelComponent))
 
 	tlc := dic.Get("TopLevelComponent").(*TopLevelComponent)
-	assert.Equal(t, 12, tlc.Counter)
+	assert.Equal(t, 12, tlc.Counter())
 }
