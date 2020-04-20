@@ -19,16 +19,16 @@ func (ls LoginService) Constructor() *LoginService {
 
 func (ls *LoginService) InvalidateToken(token *jwt.Token, tokenStr string) {
 	client := ls.RedisClient
-
 	claims := token.Claims.(*AppTokenClaims)
 	dur := time.Unix(claims.ExpiresAt, 0).Sub(time.Now())
+
 	client.Set(tokenStr, true, dur)
 }
 
 func (ls *LoginService) IsInvalidToken(tokenStr string) bool {
 	client := ls.RedisClient
-
 	_, err := client.Get(tokenStr).Result()
+
 	if err == redis.Nil {
 		return false
 	} else if err != nil {

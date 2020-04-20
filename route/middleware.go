@@ -35,7 +35,7 @@ func (lm *JWTMiddleware) ValidateMiddleware(next http.HandlerFunc) http.HandlerF
 			token, err := lm.Validate(tokenStr, &service.AppTokenClaims{})
 
 			if err == nil {
-				if !lm.LoginService.IsInvalidToken(tokenStr) {
+				if !lm.IsInvalidToken(tokenStr) {
 					req = req.WithContext(context.WithValue(req.Context(), JWTToken("jwt-token"), token))
 					next(res, req)
 					return

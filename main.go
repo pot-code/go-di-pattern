@@ -45,7 +45,6 @@ func (app *Application) Serve(host string, mux http.Handler) {
 	if !app.injected {
 		app.InjectDependency()
 	}
-
 	http.ListenAndServe(host, mux)
 }
 
