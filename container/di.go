@@ -29,11 +29,22 @@ func NewDIContainer() *DIContainer {
 
 var zeroValue = reflect.Value{}
 
+func getFieldDepName(field reflect.StructField) string {
+	v, ok := field.Tag.Lookup("dep")
+	if !ok {
+		return ""
+	}
+	if v != "" {
+		return v
+	}
+	return field.Type.Name()
+}
+
 // Register register component to DI container by its type name
 func (dic *DIContainer) Register(shell interface{}, namespace ...string) {
-	shallowVal := reflect.ValueOf(shell)
-	val := reflect.Indirect(shallowVal)
-	valType := val.Type()
+	ptrVal := reflect.ValueOf(shell)
+	realVal := reflect.Indirect(ptrVal)
+	valType := realVal.Type()
 	typeName := valType.Name()
 
 	defer func() {
@@ -44,7 +55,7 @@ func (dic *DIContainer) Register(shell interface{}, namespace ...string) {
 	}()
 
 	// check availablity
-	if shallowVal.Kind() != reflect.Ptr {
+	if ptrVal.Kind() != reflect.Ptr {
 		panic(fmt.Errorf("shell parameter must be of pointer type"))
 	}
 	if valType.Kind() != reflect.Struct {
@@ -62,8 +73,8 @@ func (dic *DIContainer) Register(shell interface{}, namespace ...string) {
 		// field to get tag data
 		tField := valType.Field(i)
 		// field to set field value
-		vField := val.Field(i)
-		if dep := tField.Tag.Get("dep"); dep != "" {
+		vField := realVal.Field(i)
+		if dep := getFieldDepName(tField); dep != "" {
 			if !vField.CanSet() {
 				panic(fmt.Errorf("field '%s' should be exported", tField.Name))
 			}

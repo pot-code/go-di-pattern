@@ -17,12 +17,20 @@ type ReturnMessage struct {
 }
 
 type LoginController struct {
-	*service.LoginService `dep:"LoginService"`
-	*service.JWTService   `dep:"JWTService"`
+	*JWTMiddleware `dep:"JWTMiddleware"`
 }
 
 func (c LoginController) Constructor() *LoginController {
-	return &LoginController{c.LoginService, c.JWTService}
+	instance := &LoginController{c.JWTMiddleware}
+
+	homeMiddleware := Compose(ErrorHandlingMiddleware, LoggingMiddleware, c.ValidateMiddleware, c.RefreshTokenMiddleware)
+	loginMiddleware := Compose(ErrorHandlingMiddleware, LoggingMiddleware)
+	logoutMiddleware := Compose(ErrorHandlingMiddleware, c.ValidateMiddleware)
+
+	http.HandleFunc("/login", loginMiddleware(c.handleLogin))
+	http.HandleFunc("/logout", logoutMiddleware(c.handleLogout))
+	http.HandleFunc("/home", homeMiddleware(c.handleHome))
+	return instance
 }
 
 func (c *LoginController) handleHome(res http.ResponseWriter, req *http.Request) {
