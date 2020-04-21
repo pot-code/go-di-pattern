@@ -23,6 +23,6 @@ func main() {
 	dic.Register(new(service.LoginService))
 	dic.Register(new(service.JWTService))
 
-	dic.Get("LoginController") // trigger the initialization
+	dic.Get("github.com/pot-code/go-di-pattern/route/LoginController") // trigger the initialization
 	http.ListenAndServe(":8080", nil)
 }

@@ -17,7 +17,7 @@ type ReturnMessage struct {
 }
 
 type LoginController struct {
-	*JWTMiddleware `dep:"JWTMiddleware"`
+	*JWTMiddleware `dep:""`
 }
 
 func (c LoginController) Constructor() *LoginController {

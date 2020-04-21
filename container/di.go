@@ -3,6 +3,7 @@ package container
 import (
 	"fmt"
 	"log"
+	"path"
 	"reflect"
 	"strings"
 )
@@ -29,6 +30,34 @@ func NewDIContainer() *DIContainer {
 
 var zeroValue = reflect.Value{}
 
+func getQualifiedTypeName(stub interface{}) string {
+	var t reflect.Type
+	switch stub.(type) {
+	case reflect.StructField:
+		t = stub.(reflect.StructField).Type
+	case reflect.Type:
+		t = stub.(reflect.Type)
+	case reflect.Value:
+		rv := stub.(reflect.Value)
+		uv := reflect.Indirect(stub.(reflect.Value))
+		if uv.IsValid() {
+			t = uv.Type()
+		} else {
+			// stub is zero value
+			t = rv.Type()
+		}
+	default:
+		panic(fmt.Errorf("unsupported stub type '%s', expected reflect.Type, reflect.Type or reflect.Value", t.String()))
+	}
+	if t.Kind() == reflect.Ptr {
+		// if t is pointer type, return its underlying type
+		t = t.Elem()
+	}
+	pkg := t.PkgPath()
+	parts := strings.Split(t.String(), ".")
+	return path.Join(pkg, parts[len(parts)-1])
+}
+
 func getFieldDepName(field reflect.StructField) string {
 	v, ok := field.Tag.Lookup("dep")
 	if !ok {
@@ -37,15 +66,15 @@ func getFieldDepName(field reflect.StructField) string {
 	if v != "" {
 		return v
 	}
-	return field.Type.Name()
+	return getQualifiedTypeName(field)
 }
 
 // Register register component to DI container by its type name
-func (dic *DIContainer) Register(shell interface{}, namespace ...string) {
+func (dic *DIContainer) Register(shell interface{}) {
 	ptrVal := reflect.ValueOf(shell)
 	realVal := reflect.Indirect(ptrVal)
 	valType := realVal.Type()
-	typeName := valType.Name()
+	typeName := getQualifiedTypeName(valType)
 
 	defer func() {
 		if err := recover(); err != nil {
@@ -62,9 +91,6 @@ func (dic *DIContainer) Register(shell interface{}, namespace ...string) {
 		panic(fmt.Errorf("component must be of Struct type"))
 	}
 
-	if len(namespace) > 0 {
-		typeName = strings.Join(namespace, ":") + ":" + typeName
-	}
 	n := valType.NumField()
 	ct := &componentTemplate{instance: shell, fields: make(map[string]reflect.Value)}
 	// make key available, if component has no dependency, entry would not exists
@@ -115,19 +141,24 @@ func initComponent(name string, depGraph map[string][]string, components map[str
 	val := reflect.Indirect(reflect.ValueOf(ci.instance))
 	pathMap[name] = true
 	for _, dep := range deps {
-		if c, ok := components[dep]; ok {
-			ci.fields[dep].Set(reflect.ValueOf(c))
-		} else {
+		var depComponentPtr interface{}
+
+		depField := ci.fields[dep]
+		if _, ok := components[dep]; !ok {
 			if pathMap[dep] { // cycle detected
 				return nil, fmt.Errorf("cycle dependency detected, '%s' and '%s' are depend on each other", name, dep)
 			}
-			depComponentPtr, err := initComponent(dep, depGraph, components, templates, pathMap)
+			ptr, err := initComponent(dep, depGraph, components, templates, pathMap)
 			if err != nil {
 				return nil, err
 			}
-			components[dep] = depComponentPtr
-			ci.fields[dep].Set(reflect.ValueOf(depComponentPtr))
+			components[dep] = ptr
+			depComponentPtr = ptr
 		}
+		if depVal := reflect.ValueOf(depComponentPtr); !depVal.Type().AssignableTo(depField.Type()) {
+			return nil, fmt.Errorf("'%s' is not assignable to '%s'", getQualifiedTypeName(depVal), getQualifiedTypeName(depField))
+		}
+		depField.Set(reflect.ValueOf(depComponentPtr))
 	}
 
 	componentPtr, err := callComponentConstructor(val)

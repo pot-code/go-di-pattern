@@ -20,8 +20,8 @@ type MiddlewareFunc func(next http.HandlerFunc) http.HandlerFunc
 type JWTToken string
 
 type JWTMiddleware struct {
-	*service.LoginService `dep:"LoginService"`
-	*service.JWTService   `dep:"JWTService"`
+	*service.LoginService `dep:""`
+	*service.JWTService   `dep:""`
 }
 
 func (lm JWTMiddleware) Constructor() *JWTMiddleware {

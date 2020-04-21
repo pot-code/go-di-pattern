@@ -10,7 +10,7 @@ import (
 )
 
 type LoginService struct {
-	RedisClient *db.RedisDB `dep:"RedisDB"`
+	RedisClient *db.RedisDB `dep:""`
 }
 
 func (ls LoginService) Constructor() *LoginService {
