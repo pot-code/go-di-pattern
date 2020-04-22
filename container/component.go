@@ -50,7 +50,7 @@ func getQualifiedTypeName(stub interface{}) string {
 			t = rv.Type()
 		}
 	default:
-		panic(fmt.Errorf("unsupported stub type '%s', expected reflect.Type, reflect.Type or reflect.Value", t.String()))
+		panic(fmt.Errorf("unsupported stub type '%s', expected reflect.Type, reflect.StructField or reflect.Value", reflect.TypeOf(stub)))
 	}
 	if t.Kind() == reflect.Ptr {
 		// if t is pointer type, return its underlying type
@@ -162,7 +162,7 @@ func initComponent(
 		}
 		componentPtr := components[depName]
 		if depVal := reflect.ValueOf(componentPtr); !depVal.Type().AssignableTo(tf.fType) {
-			return nil, fmt.Errorf("'%s' is not assignable to '%s'", getQualifiedTypeName(depVal), getQualifiedTypeName(tf))
+			return nil, fmt.Errorf("'%s' is not assignable to '%s'", getQualifiedTypeName(depVal), getQualifiedTypeName(tf.fType))
 		}
 		tf.fVal.Set(reflect.ValueOf(componentPtr))
 	}
