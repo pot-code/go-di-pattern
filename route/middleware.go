@@ -20,8 +20,8 @@ type MiddlewareFunc func(next http.HandlerFunc) http.HandlerFunc
 type JWTToken string
 
 type JWTMiddleware struct {
-	*service.LoginService `dep:""`
-	*service.JWTService   `dep:""`
+	LoginService service.ILoginService `dep:""`
+	JWTService   service.IJWTService   `dep:""`
 }
 
 func (lm JWTMiddleware) Constructor() *JWTMiddleware {
@@ -31,11 +31,11 @@ func (lm JWTMiddleware) Constructor() *JWTMiddleware {
 // ValidateMiddleware validate JWT
 func (lm *JWTMiddleware) ValidateMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(res http.ResponseWriter, req *http.Request) {
-		if tokenStr, err := lm.GetToken(req); err == nil {
-			token, err := lm.Validate(tokenStr, &service.AppTokenClaims{})
+		if tokenStr, err := lm.LoginService.GetToken(req); err == nil {
+			token, err := lm.JWTService.Validate(tokenStr, &service.AppTokenClaims{})
 
 			if err == nil {
-				if !lm.IsInvalidToken(tokenStr) {
+				if !lm.LoginService.IsInvalidToken(tokenStr) {
 					req = req.WithContext(context.WithValue(req.Context(), JWTToken("jwt-token"), token))
 					next(res, req)
 					return
@@ -59,8 +59,8 @@ func (lm *JWTMiddleware) RefreshTokenMiddleware(next http.HandlerFunc) http.Hand
 
 		if time.Unix(exp, 0).Sub(time.Now()) < RefreshTokenThreshold {
 			claims.ExpiresAt = time.Now().Add(SessionTimeout).Unix()
-			newToken, _ := lm.Sign(claims)
-			lm.SetToken(res, newToken, time.Now().Add(SessionTimeout))
+			newToken, _ := lm.JWTService.Sign(claims)
+			lm.LoginService.SetToken(res, newToken, time.Now().Add(SessionTimeout))
 		}
 		next(res, req)
 	}

@@ -17,15 +17,18 @@ type ReturnMessage struct {
 }
 
 type LoginController struct {
-	*JWTMiddleware `dep:""`
+	JWTMiddleware *JWTMiddleware        `dep:""`
+	LoginService  service.ILoginService `dep:""`
+	JWTService    service.IJWTService   `dep:""`
 }
 
 func (c LoginController) Constructor() *LoginController {
-	instance := &LoginController{c.JWTMiddleware}
+	instance := &LoginController{c.JWTMiddleware, c.LoginService, c.JWTService}
 
-	homeMiddleware := Compose(ErrorHandlingMiddleware, LoggingMiddleware, c.ValidateMiddleware, c.RefreshTokenMiddleware)
+	homeMiddleware := Compose(ErrorHandlingMiddleware, LoggingMiddleware,
+		c.JWTMiddleware.ValidateMiddleware, c.JWTMiddleware.RefreshTokenMiddleware)
 	loginMiddleware := Compose(ErrorHandlingMiddleware, LoggingMiddleware)
-	logoutMiddleware := Compose(ErrorHandlingMiddleware, c.ValidateMiddleware)
+	logoutMiddleware := Compose(ErrorHandlingMiddleware, c.JWTMiddleware.ValidateMiddleware)
 
 	http.HandleFunc("/login", loginMiddleware(c.handleLogin))
 	http.HandleFunc("/logout", logoutMiddleware(c.handleLogout))
@@ -45,7 +48,7 @@ func (c *LoginController) handleHome(res http.ResponseWriter, req *http.Request)
 }
 
 func (c *LoginController) handleLogout(res http.ResponseWriter, req *http.Request) {
-	tokenStr, _ := c.GetToken(req)
+	tokenStr, _ := c.LoginService.GetToken(req)
 	token := req.Context().Value(JWTToken("jwt-token")).(*jwt.Token)
 
 	c.LoginService.InvalidateToken(token, tokenStr)
@@ -81,12 +84,12 @@ func (c *LoginController) handleLogin(res http.ResponseWriter, req *http.Request
 		return
 	}
 
-	tokenStr, _ := c.Sign(service.AppTokenClaims{
+	tokenStr, _ := c.JWTService.Sign(service.AppTokenClaims{
 		Name: "demo",
 		StandardClaims: jwt.StandardClaims{
 			ExpiresAt: time.Now().Add(SessionTimeout).Unix(),
 		},
 	})
-	c.SetToken(res, tokenStr, time.Now().Add(SessionTimeout))
+	c.LoginService.SetToken(res, tokenStr, time.Now().Add(SessionTimeout))
 	res.WriteHeader(http.StatusOK)
 }

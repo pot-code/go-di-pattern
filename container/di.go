@@ -8,18 +8,23 @@ import (
 	"strings"
 )
 
+type tagField struct {
+	name  string
+	fType reflect.Type
+	fVal  reflect.Value
+}
+
 type componentShell struct {
 	name      string
 	realType  reflect.Type  // underlying type
 	realValue reflect.Value // underlying value
 	template  interface{}
-	fields    map[string]reflect.Value // [dependency name:struct field that requires the dependency]
+	fields    []*tagField
 }
 
 func newComponentShell(name string, realVal reflect.Value, realType reflect.Type, template interface{}) *componentShell {
 	return &componentShell{
 		name:      name,
-		fields:    make(map[string]reflect.Value),
 		realType:  realType,
 		realValue: realVal,
 		template:  template,
@@ -28,9 +33,8 @@ func newComponentShell(name string, realVal reflect.Value, realType reflect.Type
 
 // DIContainer Dependency injection container, not thread safe
 type DIContainer struct {
-	depGraph      map[string]*componentShell
-	components    map[string]interface{}
-	interfaceDeps []reflect.Type
+	depGraph   map[string]*componentShell
+	components map[string]interface{}
 }
 
 // NewDIContainer create new DI container
@@ -43,6 +47,7 @@ func NewDIContainer() *DIContainer {
 
 var zeroValue = reflect.Value{}
 
+// getQualifiedTypeName get full type name of stub, including the full package path
 func getQualifiedTypeName(stub interface{}) string {
 	var t reflect.Type
 	switch stub.(type) {
@@ -83,8 +88,9 @@ func getFieldDepName(field reflect.StructField) string {
 	return getQualifiedTypeName(field)
 }
 
-func isInterfaceType(field reflect.StructField) bool {
-	return field.Type.Kind() == reflect.Interface
+// isInterfaceType check if the field type is interface
+func isInterfaceType(field reflect.Type) bool {
+	return field.Kind() == reflect.Interface
 }
 
 // Register register component to DI container by its type name
@@ -110,21 +116,18 @@ func (dic *DIContainer) Register(shell interface{}) {
 	}
 
 	cs := newComponentShell(typeName, realVal, realType, shell)
-	// make key available, if component has no dependency, entry would not exists
 	n := realType.NumField()
 	for i := 0; i < n; i++ {
 		// field to get tag data
 		tField := realType.Field(i)
 		// field to set field value
 		vField := realVal.Field(i)
-		if dep := getFieldDepName(tField); dep != "" {
+		if depName := getFieldDepName(tField); depName != "" {
 			if !vField.CanSet() {
 				panic(fmt.Errorf("field '%s' should be exported", tField.Name))
 			}
-			if isInterfaceType(tField) {
-				dic.interfaceDeps = append(dic.interfaceDeps, tField.Type)
-			}
-			cs.fields[dep] = vField
+			tf := &tagField{name: depName, fType: tField.Type, fVal: vField}
+			cs.fields = append(cs.fields, tf)
 		}
 	}
 	dic.depGraph[typeName] = cs
@@ -148,8 +151,45 @@ func callComponentConstructor(template reflect.Value) (instance interface{}, err
 	return retVals[0].Interface(), nil
 }
 
-func initComponent(name string, depGraph map[string]*componentShell, components map[string]interface{},
-	pathMap map[string]bool) (interface{}, error) {
+func initInterfaceComponent(
+	t reflect.Type,
+	depGraph map[string]*componentShell,
+	components map[string]interface{},
+	pathMap map[string]bool,
+) (interface{}, error) {
+	var impls []*componentShell
+
+	for _, cshell := range depGraph {
+		if reflect.PtrTo(cshell.realType).Implements(t) {
+			impls = append(impls, cshell)
+		}
+	}
+	if impls == nil {
+		return nil, fmt.Errorf("can't find implementation for interface '%s'", getQualifiedTypeName(t))
+	} else if len(impls) > 1 {
+		names := make([]string, len(impls))
+		for i, cshell := range impls {
+			names[i] = cshell.name
+		}
+		return nil, fmt.Errorf("multiple implementations for interface '%s':\n  %s\n"+
+			"(you may not use embedded fields in struct to solve this problem)",
+			getQualifiedTypeName(t),
+			strings.Join(names, "\n  "))
+	}
+
+	impl := impls[0]
+	if pathMap[impl.name] {
+		return nil, fmt.Errorf("cycle dependency detected, '%s' and '%s' are depend on each other", impl.name, impl.name)
+	}
+	return initComponent(impl.name, depGraph, components, pathMap)
+}
+
+func initComponent(
+	name string,
+	depGraph map[string]*componentShell,
+	components map[string]interface{},
+	pathMap map[string]bool,
+) (interface{}, error) {
 	cs := depGraph[name]
 	if cs == nil {
 		return nil, fmt.Errorf("'%s' is not provided(registered)", name)
@@ -157,24 +197,30 @@ func initComponent(name string, depGraph map[string]*componentShell, components 
 
 	realVal := cs.realValue
 	pathMap[name] = true
-	for dep, field := range cs.fields {
-		var componentPtr interface{}
+	for _, tf := range cs.fields {
 
-		if _, ok := components[dep]; !ok {
-			if pathMap[dep] { // cycle detected
-				return nil, fmt.Errorf("cycle dependency detected, '%s' and '%s' are depend on each other", name, dep)
+		depName := tf.name
+		if _, ok := components[depName]; !ok {
+			if pathMap[depName] { // cycle detected
+				return nil, fmt.Errorf("cycle dependency detected, '%s' and '%s' are depend on each other", name, depName)
 			}
-			ptr, err := initComponent(dep, depGraph, components, pathMap)
+			var componentPtr interface{}
+			var err error
+			if isInterfaceType(tf.fType) {
+				componentPtr, err = initInterfaceComponent(tf.fType, depGraph, components, pathMap)
+			} else {
+				componentPtr, err = initComponent(depName, depGraph, components, pathMap)
+			}
 			if err != nil {
 				return nil, err
 			}
-			components[dep] = ptr
-			componentPtr = ptr
+			components[depName] = componentPtr
 		}
-		if depVal := reflect.ValueOf(componentPtr); !depVal.Type().AssignableTo(field.Type()) {
-			return nil, fmt.Errorf("'%s' is not assignable to '%s'", getQualifiedTypeName(depVal), getQualifiedTypeName(field))
+		componentPtr := components[depName]
+		if depVal := reflect.ValueOf(componentPtr); !depVal.Type().AssignableTo(tf.fType) {
+			return nil, fmt.Errorf("'%s' is not assignable to '%s'", getQualifiedTypeName(depVal), getQualifiedTypeName(tf))
 		}
-		field.Set(reflect.ValueOf(componentPtr))
+		tf.fVal.Set(reflect.ValueOf(componentPtr))
 	}
 	// Constructor is value type receiver's to call
 	componentPtr, err := callComponentConstructor(realVal)
@@ -186,13 +232,13 @@ func initComponent(name string, depGraph map[string]*componentShell, components 
 	return componentPtr, nil
 }
 
-// Get return component from DI container by component name, initialization may be needed
+// Get return component from DI container by qualified type name, initialization may be needed
 func (dic *DIContainer) Get(name string) interface{} {
 	components := dic.components
 	if c, ok := components[name]; ok {
 		return c
 	}
-	// record init path
+	// record initialization path
 	pathMap := make(map[string]bool)
 	pathMap[name] = true
 	c, err := initComponent(name, dic.depGraph, dic.components, pathMap)
