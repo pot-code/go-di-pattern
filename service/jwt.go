@@ -20,7 +20,7 @@ type JWTService struct {
 }
 
 func (manager JWTService) Constructor() *JWTService {
-	return &JWTService{[]byte("jwtdemo"), jwt.SigningMethodHS256}
+	return &JWTService{[]byte("go-di-pattern"), jwt.SigningMethodHS256}
 }
 
 func (manager *JWTService) Sign(claims jwt.Claims) (string, error) {

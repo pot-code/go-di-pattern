@@ -232,19 +232,28 @@ func initComponent(
 	return componentPtr, nil
 }
 
+// Populate start full initialization
+func (dic *DIContainer) Populate() error {
+	for cname := range dic.depGraph {
+		if _, err := dic.Get(cname); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // Get return component from DI container by qualified type name, initialization may be needed
-func (dic *DIContainer) Get(name string) interface{} {
+func (dic *DIContainer) Get(name string) (interface{}, error) {
 	components := dic.components
 	if c, ok := components[name]; ok {
-		return c
+		return c, nil
 	}
 	// record initialization path
 	pathMap := make(map[string]bool)
 	pathMap[name] = true
 	c, err := initComponent(name, dic.depGraph, dic.components, pathMap)
 	if err != nil {
-		log.Printf("Error occurred while injecting dependency of '%s':\n  %v", name, err)
-		panic(err)
+		return nil, fmt.Errorf("Error occurred while injecting dependency of '%s':\n  %v", name, err)
 	}
-	return c
+	return c, nil
 }

@@ -12,17 +12,33 @@ import (
 	"github.com/pot-code/go-di-pattern/route"
 )
 
+type App struct {
+	LoginController *route.LoginController `dep:""`
+	Host            string
+}
+
+func (app App) Constructor() *App {
+	if err := http.ListenAndServe(app.Host, nil); err != nil {
+		log.Fatal(err)
+	}
+	return &app
+}
+
 func main() {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
-	log.SetPrefix("[jwt demo]")
+	log.SetPrefix("[go-di-pattern]")
 
+	app := &App{Host: ":8080"}
 	dic := container.NewDIContainer()
 	dic.Register(new(route.LoginController))
 	dic.Register(new(route.JWTMiddleware))
 	dic.Register(new(db.RedisDB))
 	dic.Register(new(service.LoginService))
 	dic.Register(new(service.JWTService))
+	dic.Register(app)
 
-	dic.Get("github.com/pot-code/go-di-pattern/route/LoginController") // trigger the initialization
-	http.ListenAndServe(":8080", nil)
+	err := dic.Populate()
+	if err != nil {
+		log.Fatal(err)
+	}
 }

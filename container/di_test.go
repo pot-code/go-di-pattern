@@ -23,19 +23,26 @@ func (llc *LowLevelComponent) Counter() int {
 }
 
 type TopLevelComponent struct {
-	ILowLevel `dep:"LowLevelComponent"`
+	LowLevelComponent ILowLevel `dep:""`
 }
 
 func (tlc TopLevelComponent) Constructor() *TopLevelComponent {
-	return &TopLevelComponent{tlc.ILowLevel}
+	return &TopLevelComponent{tlc.LowLevelComponent}
 }
 
-func TestGet(t *testing.T) {
+func TestExample(t *testing.T) {
 	dic := NewDIContainer()
 
+	tlc := new(TopLevelComponent)
 	dic.Register(new(LowLevelComponent))
-	dic.Register(new(TopLevelComponent))
+	dic.Register(tlc)
+	dic.Populate()
 
-	tlc := dic.Get("TopLevelComponent").(*TopLevelComponent)
-	assert.Equal(t, 12, tlc.Counter())
+	tlc = tlc.Constructor()
+	assert.Equal(t, 12, tlc.LowLevelComponent.Counter())
+
+	// use Get
+	tlcPtr, _ := dic.Get("github.com/pot-code/go-di-pattern/container/TopLevelComponent")
+	tlc = tlcPtr.(*TopLevelComponent)
+	assert.Equal(t, 12, tlc.LowLevelComponent.Counter())
 }
