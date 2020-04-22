@@ -12,9 +12,11 @@ type AppTokenClaims struct {
 	jwt.StandardClaims
 }
 
-type JWTManager interface {
+type IJWTService interface {
 	Sign(claims jwt.Claims) (string, error)
-	Validate(tokenStr string) (*jwt.Token, error)
+	Validate(tokenStr string, claims jwt.Claims) (*jwt.Token, error)
+	SetToken(res http.ResponseWriter, tokenStr string, exp time.Time)
+	GetToken(req *http.Request) (string, error)
 }
 
 type JWTService struct {

@@ -8,24 +8,37 @@ import (
 	"strings"
 )
 
-type componentTemplate struct {
-	instance interface{}
-	fields   map[string]reflect.Value // [dependency name:struct field that requires the dependency]
+type componentShell struct {
+	name      string
+	realType  reflect.Type  // underlying type
+	realValue reflect.Value // underlying value
+	template  interface{}
+	fields    map[string]reflect.Value // [dependency name:struct field that requires the dependency]
+}
+
+func newComponentShell(name string, realVal reflect.Value, realType reflect.Type, template interface{}) *componentShell {
+	return &componentShell{
+		name:      name,
+		fields:    make(map[string]reflect.Value),
+		realType:  realType,
+		realValue: realVal,
+		template:  template,
+	}
 }
 
 // DIContainer Dependency injection container, not thread safe
 type DIContainer struct {
-	depGraph   map[string][]string
-	components map[string]interface{}
-	templates  map[string]*componentTemplate
+	depGraph      map[string]*componentShell
+	components    map[string]interface{}
+	interfaceDeps []reflect.Type
 }
 
 // NewDIContainer create new DI container
 func NewDIContainer() *DIContainer {
 	return &DIContainer{
-		make(map[string][]string),
-		make(map[string]interface{}),
-		make(map[string]*componentTemplate)}
+		depGraph:   make(map[string]*componentShell),
+		components: make(map[string]interface{}),
+	}
 }
 
 var zeroValue = reflect.Value{}
@@ -51,6 +64,7 @@ func getQualifiedTypeName(stub interface{}) string {
 	}
 	if t.Kind() == reflect.Ptr {
 		// if t is pointer type, return its underlying type
+		// and if t is the zero value of a type, this call won't panic
 		t = t.Elem()
 	}
 	pkg := t.PkgPath()
@@ -69,12 +83,16 @@ func getFieldDepName(field reflect.StructField) string {
 	return getQualifiedTypeName(field)
 }
 
+func isInterfaceType(field reflect.StructField) bool {
+	return field.Type.Kind() == reflect.Interface
+}
+
 // Register register component to DI container by its type name
 func (dic *DIContainer) Register(shell interface{}) {
 	ptrVal := reflect.ValueOf(shell)
 	realVal := reflect.Indirect(ptrVal)
-	valType := realVal.Type()
-	typeName := getQualifiedTypeName(valType)
+	realType := realVal.Type()
+	typeName := getQualifiedTypeName(realType)
 
 	defer func() {
 		if err := recover(); err != nil {
@@ -87,38 +105,39 @@ func (dic *DIContainer) Register(shell interface{}) {
 	if ptrVal.Kind() != reflect.Ptr {
 		panic(fmt.Errorf("shell parameter must be of pointer type"))
 	}
-	if valType.Kind() != reflect.Struct {
+	if realType.Kind() != reflect.Struct {
 		panic(fmt.Errorf("component must be of Struct type"))
 	}
 
-	n := valType.NumField()
-	ct := &componentTemplate{instance: shell, fields: make(map[string]reflect.Value)}
+	cs := newComponentShell(typeName, realVal, realType, shell)
 	// make key available, if component has no dependency, entry would not exists
-	dic.depGraph[typeName] = nil
+	n := realType.NumField()
 	for i := 0; i < n; i++ {
 		// field to get tag data
-		tField := valType.Field(i)
+		tField := realType.Field(i)
 		// field to set field value
 		vField := realVal.Field(i)
 		if dep := getFieldDepName(tField); dep != "" {
 			if !vField.CanSet() {
 				panic(fmt.Errorf("field '%s' should be exported", tField.Name))
 			}
-			dic.depGraph[typeName] = append(dic.depGraph[typeName], dep)
-			ct.fields[dep] = vField
+			if isInterfaceType(tField) {
+				dic.interfaceDeps = append(dic.interfaceDeps, tField.Type)
+			}
+			cs.fields[dep] = vField
 		}
 	}
-	dic.templates[typeName] = ct
+	dic.depGraph[typeName] = cs
 }
 
-func callComponentConstructor(shell reflect.Value) (instance interface{}, err error) {
+func callComponentConstructor(template reflect.Value) (instance interface{}, err error) {
 	defer func() {
 		if e := recover(); e != nil {
 			instance = nil
 			err = fmt.Errorf("%v", e)
 		}
 	}()
-	constructor := shell.MethodByName("Constructor")
+	constructor := template.MethodByName("Constructor")
 	if constructor == zeroValue {
 		return nil, fmt.Errorf("constructor method is missing")
 	}
@@ -129,39 +148,36 @@ func callComponentConstructor(shell reflect.Value) (instance interface{}, err er
 	return retVals[0].Interface(), nil
 }
 
-func initComponent(name string, depGraph map[string][]string, components map[string]interface{},
-	templates map[string]*componentTemplate, pathMap map[string]bool) (interface{}, error) {
-	deps := depGraph[name]
-	ci := templates[name]
-
-	if ci == nil {
+func initComponent(name string, depGraph map[string]*componentShell, components map[string]interface{},
+	pathMap map[string]bool) (interface{}, error) {
+	cs := depGraph[name]
+	if cs == nil {
 		return nil, fmt.Errorf("'%s' is not provided(registered)", name)
 	}
 
-	val := reflect.Indirect(reflect.ValueOf(ci.instance))
+	realVal := cs.realValue
 	pathMap[name] = true
-	for _, dep := range deps {
-		var depComponentPtr interface{}
+	for dep, field := range cs.fields {
+		var componentPtr interface{}
 
-		depField := ci.fields[dep]
 		if _, ok := components[dep]; !ok {
 			if pathMap[dep] { // cycle detected
 				return nil, fmt.Errorf("cycle dependency detected, '%s' and '%s' are depend on each other", name, dep)
 			}
-			ptr, err := initComponent(dep, depGraph, components, templates, pathMap)
+			ptr, err := initComponent(dep, depGraph, components, pathMap)
 			if err != nil {
 				return nil, err
 			}
 			components[dep] = ptr
-			depComponentPtr = ptr
+			componentPtr = ptr
 		}
-		if depVal := reflect.ValueOf(depComponentPtr); !depVal.Type().AssignableTo(depField.Type()) {
-			return nil, fmt.Errorf("'%s' is not assignable to '%s'", getQualifiedTypeName(depVal), getQualifiedTypeName(depField))
+		if depVal := reflect.ValueOf(componentPtr); !depVal.Type().AssignableTo(field.Type()) {
+			return nil, fmt.Errorf("'%s' is not assignable to '%s'", getQualifiedTypeName(depVal), getQualifiedTypeName(field))
 		}
-		depField.Set(reflect.ValueOf(depComponentPtr))
+		field.Set(reflect.ValueOf(componentPtr))
 	}
-
-	componentPtr, err := callComponentConstructor(val)
+	// Constructor is value type receiver's to call
+	componentPtr, err := callComponentConstructor(realVal)
 	if err != nil {
 		return nil, fmt.Errorf("failed to call Constructor of '%s': %v", name, err)
 	}
@@ -179,7 +195,7 @@ func (dic *DIContainer) Get(name string) interface{} {
 	// record init path
 	pathMap := make(map[string]bool)
 	pathMap[name] = true
-	c, err := initComponent(name, dic.depGraph, dic.components, dic.templates, pathMap)
+	c, err := initComponent(name, dic.depGraph, dic.components, pathMap)
 	if err != nil {
 		log.Printf("Error occurred while injecting dependency of '%s':\n  %v", name, err)
 		panic(err)
