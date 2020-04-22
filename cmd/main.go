@@ -4,10 +4,8 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/pot-code/go-di-pattern/db"
-	"github.com/pot-code/go-di-pattern/service"
-
 	"github.com/pot-code/go-di-pattern/container"
+	"github.com/pot-code/go-di-pattern/service"
 
 	"github.com/pot-code/go-di-pattern/route"
 )
@@ -31,8 +29,6 @@ func main() {
 	app := &App{Host: ":8080"}
 	dic := container.NewDIContainer()
 	dic.Register(new(route.LoginController))
-	dic.Register(new(route.JWTMiddleware))
-	dic.Register(new(db.RedisDB))
 	dic.Register(new(service.LoginService))
 	dic.Register(new(service.JWTService))
 	dic.Register(app)

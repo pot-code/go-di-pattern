@@ -42,22 +42,31 @@ func (dic *DIContainer) Register(shell interface{}) {
 		panic(fmt.Errorf("component must be of Struct type"))
 	}
 
-	cs := newComponentShell(typeName, realVal, realType, shell)
+	cShell := newComponentShell(typeName, realVal, realType, shell)
 	n := realType.NumField()
 	for i := 0; i < n; i++ {
 		// field to get tag data
-		tField := realType.Field(i)
+		sField := realType.Field(i)
 		// field to set field value
-		vField := realVal.Field(i)
-		if depName := getFieldDepName(tField); depName != "" {
-			if !vField.CanSet() {
-				panic(fmt.Errorf("field '%s' should be exported", tField.Name))
+		fieldVal := realVal.Field(i)
+		if depName := getFieldDepName(sField); depName != "" {
+			if !fieldVal.CanSet() {
+				panic(fmt.Errorf("field '%s' should be exported", sField.Name))
 			}
-			tf := &tagField{name: depName, fType: tField.Type, fVal: vField}
-			cs.fields = append(cs.fields, tf)
+			if !isInterfaceType(sField.Type) {
+				// if field type is concrete type, register it recursively
+				eType := sField.Type.Elem()
+				dic.Register(reflect.New(eType).Interface())
+			}
+			tf := &tagField{name: depName, fType: sField.Type, fVal: fieldVal}
+			cShell.fields = append(cShell.fields, tf)
 		}
 	}
-	dic.depGraph[typeName] = cs
+	// if component has no dependency, initialize it first
+	if len(cShell.fields) == 0 {
+		initComponent(typeName, dic.depGraph, dic.components, make(map[string]bool))
+	}
+	dic.depGraph[typeName] = cShell
 }
 
 // Get return component from DI container by qualified type name, initialization may be needed

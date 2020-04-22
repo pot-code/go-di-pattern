@@ -78,10 +78,10 @@ func isInterfaceType(field reflect.Type) bool {
 	return field.Kind() == reflect.Interface
 }
 
-func callComponentConstructor(template reflect.Value) (instance interface{}, err error) {
+func callComponentConstructor(template reflect.Value) (componentPtr interface{}, err error) {
 	defer func() {
 		if e := recover(); e != nil {
-			instance = nil
+			componentPtr = nil
 			err = fmt.Errorf("%v", e)
 		}
 	}()
@@ -104,17 +104,17 @@ func initInterfaceComponent(
 ) (interface{}, error) {
 	var impls []*componentShell
 
-	for _, cshell := range depGraph {
-		if reflect.PtrTo(cshell.realType).Implements(t) {
-			impls = append(impls, cshell)
+	for _, cShell := range depGraph {
+		if reflect.PtrTo(cShell.realType).Implements(t) {
+			impls = append(impls, cShell)
 		}
 	}
 	if impls == nil {
-		return nil, fmt.Errorf("can't find implementation for interface '%s'", getQualifiedTypeName(t))
+		return nil, fmt.Errorf("couldn't find implementation for interface '%s'", getQualifiedTypeName(t))
 	} else if len(impls) > 1 {
 		names := make([]string, len(impls))
-		for i, cshell := range impls {
-			names[i] = cshell.name
+		for i, cShell := range impls {
+			names[i] = cShell.name
 		}
 		return nil, fmt.Errorf("multiple implementations for interface '%s':\n  %s\n"+
 			"(you may not use embedded fields in struct to solve this problem)",
@@ -135,15 +135,14 @@ func initComponent(
 	components map[string]interface{},
 	pathMap map[string]bool,
 ) (interface{}, error) {
-	cs := depGraph[name]
-	if cs == nil {
+	cShell := depGraph[name]
+	if cShell == nil {
 		return nil, fmt.Errorf("'%s' is not provided(registered)", name)
 	}
 
-	realVal := cs.realValue
+	realVal := cShell.realValue
 	pathMap[name] = true
-	for _, tf := range cs.fields {
-
+	for _, tf := range cShell.fields {
 		depName := tf.name
 		if _, ok := components[depName]; !ok {
 			if pathMap[depName] { // cycle detected
