@@ -1,0 +1,11 @@
+version: '3.3'
+services:
+  redis:
+    image: redis
+  app:
+    build: ./
+    image: go-di-pattern:1.0
+    ports:
+      - '8080:8080'
+    depends_on:
+      - redis

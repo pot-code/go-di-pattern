@@ -78,16 +78,17 @@ dic.Register(new(RedisDB))
 需要使用组件类型的完整路径获取组件指针，例如：
 
 ```go
-dic.Get("github.com/pot-code/go-di-pattern/route/LoginController")
+ptr, err := dic.Get("github.com/pot-code/go-di-pattern/route/LoginController")
 ```
 
-这样设计是为了避免命名冲突，可以在注册时使用一个变量保存引用，然后通过这个引用获取：
+这样设计是为了避免命名冲突。还可以在注册时使用一个变量保存引用，以便后续使用：
 
 ```go
 instance := new(route.LoginController)
 dic.Register(instance)
 dic.Populate() // 调用会触发初始化
 
+instance = instance.Constructor() // 使用 Constructor 的返回值更安全
 instance.DoXxx()
 ```
 
@@ -113,7 +114,7 @@ DI 包含循环依赖的检测代码，根据错误提示操作
 
 ## 运行
 
-先启动本地 Redis，再执行 `go run ./`
+`docker-compose up`
 
 ### 路由
 

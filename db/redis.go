@@ -21,7 +21,8 @@ func newRedisClient() *redis.Client {
 		}
 	}()
 	client := redis.NewClient(&redis.Options{
-		DB: 0,
+		Addr: "redis:6379",
+		DB:   0,
 	})
 	_, err := client.Ping().Result()
 	if err != nil {
