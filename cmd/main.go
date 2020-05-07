@@ -4,8 +4,8 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/pot-code/go-di-pattern/container"
 	"github.com/pot-code/go-di-pattern/service"
+	"github.com/pot-code/go-injection"
 
 	"github.com/pot-code/go-di-pattern/route"
 )
@@ -27,7 +27,7 @@ func main() {
 	log.SetPrefix("[go-di-pattern]")
 
 	app := &App{Host: ":8080"}
-	dic := container.NewDIContainer()
+	dic := injection.NewDIContainer()
 	dic.Register(new(route.LoginController))
 	dic.Register(new(service.LoginService))
 	dic.Register(new(service.JWTService))
